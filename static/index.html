@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f7f5">
+  <title>JB-Chat</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar" aria-label="Chat history">
+      <div class="brand-row">
+        <div class="brand-mark" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2.8 14.4 9.6 21.2 12l-6.8 2.4L12 21.2l-2.4-6.8L2.8 12l6.8-2.4L12 2.8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m19 2 .7 2.3L22 5l-2.3.7L19 8l-.7-2.3L16 5l2.3-.7L19 2Z" fill="currentColor"/></svg>
+        </div>
+        <span class="brand-name">JB-Chat</span>
+      </div>
+      <button class="new-chat" id="newChat" type="button">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        New chat
+      </button>
+      <div class="section-label">Your chats</div>
+      <div class="chat-list" id="chatList"></div>
+      <!-- <div class="sidebar-footer">
+        <div class="avatar" aria-hidden="true">L</div>
+      </div> -->
+    </aside>
+    <div class="scrim" id="scrim"></div>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="menu-button" id="menuButton" type="button" aria-label="Open chat history">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+          <div class="conversation-title" id="conversationTitle">New conversation</div>
+          <button class="model-pill" id="modelButton" type="button" aria-haspopup="dialog" aria-controls="modelDialog">
+            <span class="status-dot"></span>
+            <span id="selectedModelName">
+              <span class="selected-model-title"></span>
+              <span class="selected-model-quota"></span>
+            </span>
+          </button>
+        </div>
+      </header>
+
+      <section class="content" aria-label="Conversation">
+        <div class="thread" id="thread" aria-live="polite">
+          <section class="welcome" id="welcome">
+            <div class="welcome-mark" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2.8 14.4 9.6 21.2 12l-6.8 2.4L12 21.2l-2.4-6.8L2.8 12l6.8-2.4L12 2.8Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+            </div>
+            <h1>What’s on your mind?</h1>
+            <p>Ask a question, explore an idea, or get help with something you’re working on.</p>
+            <!-- <div class="suggestions">
+              <button class="suggestion" type="button" data-prompt="Explain a tricky idea in simple terms">
+                <strong>Make it make sense</strong><span>Explain a tricky idea in simple terms</span>
+              </button>
+              <button class="suggestion" type="button" data-prompt="Help me brainstorm a creative project">
+                <strong>Get some ideas flowing</strong><span>Brainstorm a creative project with me</span>
+              </button>
+              <button class="suggestion" type="button" data-prompt="Help me write a clear, friendly email about">
+                <strong>Find the right words</strong><span>Draft a clear, friendly email</span>
+              </button>
+              <button class="suggestion" type="button" data-prompt="Help me understand and fix this code:">
+                <strong>Work through some code</strong><span>Understand a bug or learn a concept</span>
+              </button>
+            </div> -->
+          </section>
+        </div>
+
+        <div class="composer-wrap">
+          <form class="composer" id="chatForm">
+            <textarea id="promptInput" rows="1" maxlength="8000" aria-label="Message JB-Chat" placeholder="Message JB-Chat…"></textarea>
+              <button class="send-button" id="sendButton" type="submit" aria-label="Send message" disabled>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 19V5m0 0L6 11m6-6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+          </form>
+          <p class="disclaimer">JB-Chat can make mistakes. Check important information.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog class="model-dialog" id="modelDialog" aria-labelledby="modelDialogTitle">
+    <div class="model-dialog-header">
+      <h2 id="modelDialogTitle">Choose a model</h2>
+      <button class="model-close" id="closeModelDialog" type="button" aria-label="Close model selector">×</button>
+    </div>
+    <p class="model-dialog-copy">Groq does not label free-tier eligibility in its model catalog, so this lists models returned for your API key. The circle shows the daily request quota used; token usage is for the current minute. These are rate-limit percentages, not a credit balance.</p>
+    <div class="model-list" id="modelList" aria-live="polite">
+      <p class="model-dialog-message">Select the model button to load available models.</p>
+    </div>
+  </dialog>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
