@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from openai import APIError, OpenAI, RateLimitError
 from pydantic import BaseModel, Field
+import tiktoken
 
 app = FastAPI()
 FRONTEND_FILE = Path(__file__).parent / "static" / "index.html"
@@ -44,6 +45,25 @@ def get_groq_client() -> OpenAI:
         base_url="https://api.groq.com/openai/v1",
         api_key=api_key,
     )
+
+
+def get_model_encoding(model: ModelName) -> tiktoken.Encoding | None:
+    if model in ("openai/gpt-oss-20b", "openai/gpt-oss-120b"):
+        return tiktoken.get_encoding("o200k_harmony")
+    try:
+        return tiktoken.encoding_for_model(model)
+    except KeyError:
+        return None
+
+
+def get_token_pieces(text: str, encoding: tiktoken.Encoding) -> list[str]:
+    token_ids = encoding.encode(text, disallowed_special=())
+    return [
+        encoding.decode_single_token_bytes(token_id).decode(
+            "utf-8", errors="backslashreplace"
+        )
+        for token_id in token_ids
+    ]
 
 
 def get_quota(headers: Mapping[str, str]) -> dict[str, int | None]:
@@ -101,6 +121,7 @@ def models() -> dict[str, list[dict[str, str]]]:
 @app.post("/chat")
 def chat(request: ChatRequest) -> JSONResponse:
     client = get_groq_client()
+    
     try:
         raw_response = client.chat.completions.with_raw_response.create(
             model=request.model,
@@ -115,6 +136,12 @@ def chat(request: ChatRequest) -> JSONResponse:
             temperature=0.7,
         )
         response = raw_response.parse()
+
+        encoding = get_model_encoding(request.model)
+        input_token_pieces = get_token_pieces(request.prompt, encoding) if encoding else None
+        output_text = response.choices[0].message.content or ""
+        output_token_pieces = get_token_pieces(output_text, encoding) if encoding else None
+
     except RateLimitError as error:
         return JSONResponse(
             status_code=429,
@@ -133,5 +160,14 @@ def chat(request: ChatRequest) -> JSONResponse:
         content={
             "answer": response.choices[0].message.content or "",
             "quota": get_quota(raw_response.headers),
+            "inputToken": len(input_token_pieces) if input_token_pieces is not None else None,
+            "outputToken": len(output_token_pieces) if output_token_pieces is not None else None,
+            "inputTokenPieces": input_token_pieces,
+            "outputTokenPieces": output_token_pieces,
+            "tokenCountWarning": (
+                None
+                if encoding
+                else f"Token counts are unavailable for {request.model}."
+            ),
         }
     )
