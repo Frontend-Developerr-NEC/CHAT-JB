@@ -206,6 +206,177 @@
       });
     }
 
+    function appendInlineMarkdown(parent, text) {
+      const pattern = /(`+)(.+?)\1|\*\*(.+?)\*\*|__(.+?)__|\*(?!\s)(.+?)\*|_(?!\s)(.+?)_|~~(.+?)~~|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+      let lastIndex = 0;
+      let match;
+
+      while ((match = pattern.exec(text)) !== null) {
+        parent.append(document.createTextNode(text.slice(lastIndex, match.index)));
+        let element;
+        let content;
+        if (match[1]) {
+          element = document.createElement("code");
+          content = match[2];
+        } else if (match[3] || match[4]) {
+          element = document.createElement("strong");
+          content = match[3] || match[4];
+        } else if (match[5] || match[6]) {
+          element = document.createElement("em");
+          content = match[5] || match[6];
+        } else if (match[7]) {
+          element = document.createElement("del");
+          content = match[7];
+        } else {
+          element = document.createElement("a");
+          element.href = match[9];
+          element.target = "_blank";
+          element.rel = "noopener noreferrer";
+          content = match[8];
+        }
+        element.textContent = content;
+        parent.append(element);
+        lastIndex = pattern.lastIndex;
+      }
+
+      parent.append(document.createTextNode(text.slice(lastIndex)));
+    }
+
+    function renderMarkdown(text, container) {
+      const lines = text.replace(/\r\n?/g, "\n").split("\n").map((line) =>
+        line.replace(
+          /^(\s{0,3}(?:#{1,6}\s+)?(?:\*\*|__)?)(TL;DR)(?=(?:\*\*|__)?\s*(?::|—|-|$))/i,
+          "$1Quick Summary",
+        )
+      );
+      let index = 0;
+
+      const isTable = (lineIndex) =>
+        lineIndex + 1 < lines.length &&
+        lines[lineIndex].includes("|") &&
+        /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[lineIndex + 1]);
+      const isBlockStart = (lineIndex) =>
+        /^```/.test(lines[lineIndex]) ||
+        /^#{1,6}\s/.test(lines[lineIndex]) ||
+        /^\s*(?:[-*_]\s*){3,}$/.test(lines[lineIndex]) ||
+        /^\s*>/.test(lines[lineIndex]) ||
+        /^\s*[-+*]\s+/.test(lines[lineIndex]) ||
+        /^\s*\d+[.)]\s+/.test(lines[lineIndex]) ||
+        isTable(lineIndex);
+      const cells = (line) => line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+
+      while (index < lines.length) {
+        const line = lines[index];
+        if (!line.trim()) {
+          index += 1;
+          continue;
+        }
+
+        if (/^```/.test(line)) {
+          const language = line.slice(3).trim();
+          const codeLines = [];
+          index += 1;
+          while (index < lines.length && !/^```/.test(lines[index])) {
+            codeLines.push(lines[index]);
+            index += 1;
+          }
+          if (index < lines.length) index += 1;
+          const pre = document.createElement("pre");
+          const code = document.createElement("code");
+          if (language) code.dataset.language = language;
+          code.textContent = codeLines.join("\n");
+          pre.append(code);
+          container.append(pre);
+          continue;
+        }
+
+        const heading = line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/);
+        if (heading) {
+          const element = document.createElement(heading[1].length <= 2 ? "h2" : "h3");
+          appendInlineMarkdown(element, heading[2]);
+          container.append(element);
+          index += 1;
+          continue;
+        }
+
+        if (/^\s*(?:[-*_]\s*){3,}$/.test(line)) {
+          container.append(document.createElement("hr"));
+          index += 1;
+          continue;
+        }
+
+        if (/^\s*>/.test(line)) {
+          const quote = document.createElement("blockquote");
+          while (index < lines.length && /^\s*>/.test(lines[index])) {
+            const paragraph = document.createElement("p");
+            appendInlineMarkdown(paragraph, lines[index].replace(/^\s*>\s?/, ""));
+            quote.append(paragraph);
+            index += 1;
+          }
+          container.append(quote);
+          continue;
+        }
+
+        if (isTable(index)) {
+          const table = document.createElement("table");
+          const header = document.createElement("thead");
+          const headerRow = document.createElement("tr");
+          cells(line).forEach((value) => {
+            const cell = document.createElement("th");
+            appendInlineMarkdown(cell, value);
+            headerRow.append(cell);
+          });
+          header.append(headerRow);
+          table.append(header);
+          index += 2;
+
+          const body = document.createElement("tbody");
+          while (index < lines.length && lines[index].includes("|") && lines[index].trim()) {
+            const row = document.createElement("tr");
+            cells(lines[index]).forEach((value) => {
+              const cell = document.createElement("td");
+              appendInlineMarkdown(cell, value);
+              row.append(cell);
+            });
+            body.append(row);
+            index += 1;
+          }
+          table.append(body);
+          const wrapper = document.createElement("div");
+          wrapper.className = "markdown-table-wrap";
+          wrapper.append(table);
+          container.append(wrapper);
+          continue;
+        }
+
+        const listMatch = line.match(/^\s*(?:([-+*])|(\d+)[.)])\s+(.+)$/);
+        if (listMatch) {
+          const ordered = Boolean(listMatch[2]);
+          const list = document.createElement(ordered ? "ol" : "ul");
+          while (index < lines.length) {
+            const itemMatch = lines[index].match(/^\s*(?:([-+*])|(\d+)[.)])\s+(.+)$/);
+            if (!itemMatch || Boolean(itemMatch[2]) !== ordered) break;
+            const item = document.createElement("li");
+            appendInlineMarkdown(item, itemMatch[3]);
+            list.append(item);
+            index += 1;
+          }
+          container.append(list);
+          continue;
+        }
+
+        const paragraphLines = [line.trim()];
+        index += 1;
+        while (index < lines.length && lines[index].trim() && !isBlockStart(index)) {
+          paragraphLines.push(lines[index].trim());
+          index += 1;
+        }
+        const paragraph = document.createElement("p");
+        appendInlineMarkdown(paragraph, paragraphLines.join(" "));
+        container.append(paragraph);
+      }
+    }
+
     function renderMessages() {
       thread.replaceChildren();
       if (messages.length === 0) {
@@ -229,25 +400,101 @@
         const text = document.createElement("div");
         text.className = "message-text";
 
-        text.textContent = message.content;
+        if (message.role === "assistant" && !message.error) {
+          text.classList.add("markdown-body");
+          renderMarkdown(message.content, text);
+        } else {
+          text.textContent = message.content;
+        }
         content.append(name, text);
         if (message.role === "assistant" && !message.error) {
           const tools = document.createElement("div");
           tools.className = "message-tools";
+          const tokenCounts = document.createElement("div");
+          tokenCounts.className = "token-counts";
+
+          [
+            { label: "Input", count: message.inputToken, pieces: message.inputTokenPieces },
+            { label: "Output", count: message.outputToken, pieces: message.outputTokenPieces },
+          ].forEach(({ label, count, pieces }) => {
+            const tokenItem = document.createElement("div");
+            tokenItem.className = "token-count-item";
+            const group = document.createElement("div");
+            group.className = "token-count-group";
+            const countLabel = document.createElement("span");
+            countLabel.textContent = `${label}:`;
+            const countValue = document.createElement("span");
+            countValue.className = "token-count-value";
+            countValue.textContent = Number.isInteger(count) ? count.toLocaleString() : "—";
+            const eye = document.createElement("button");
+            eye.type = "button";
+            eye.className = "token-view-button";
+            eye.setAttribute("aria-label", `View ${label.toLowerCase()} tokens`);
+            eye.setAttribute("aria-expanded", "false");
+            eye.title = `View ${label.toLowerCase()} token breakdown`;
+            eye.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="2.7" stroke="currentColor" stroke-width="1.7"/></svg>';
+            const panel = document.createElement("div");
+            panel.className = "token-breakdown";
+            panel.hidden = true;
+
+            if (!Array.isArray(pieces)) {
+              eye.disabled = true;
+              eye.title = "Token breakdown is unavailable for this model";
+            } else {
+              const heading = document.createElement("div");
+              heading.className = "token-breakdown-heading";
+              heading.textContent = `${label} text split into ${pieces.length} tokens`;
+              const list = document.createElement("div");
+              list.className = "token-pieces";
+              pieces.forEach((piece, tokenIndex) => {
+                const chip = document.createElement("span");
+                chip.className = "token-piece";
+                chip.textContent = piece.replace(/[ \t\r\n]/g, (character) => ({
+                  " ": "␠",
+                  "\t": "⇥",
+                  "\r": "␍",
+                  "\n": "↵",
+                })[character]);
+                chip.title = `Token ${tokenIndex + 1}: ${piece}`;
+                chip.setAttribute("aria-label", `Token ${tokenIndex + 1}: ${piece}`);
+                list.append(chip);
+              });
+              panel.append(heading, list);
+              eye.addEventListener("click", () => {
+                panel.hidden = !panel.hidden;
+                eye.setAttribute("aria-expanded", String(!panel.hidden));
+              });
+            }
+
+            group.append(countLabel, countValue, eye);
+            tokenItem.append(group, panel);
+            tokenCounts.append(tokenItem);
+          });
+
           const copy = document.createElement("button");
           copy.type = "button";
-          copy.textContent = "Copy";
+          copy.className = "copy-button";
+          copy.setAttribute("aria-label", "Copy response");
+          copy.title = "Copy response";
+          const copyIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg>';
           copy.addEventListener("click", async () => {
             try {
               await navigator.clipboard.writeText(message.content);
-              copy.textContent = "Copied";
-              window.setTimeout(() => { copy.textContent = "Copy"; }, 1200);
+              copy.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+              copy.setAttribute("aria-label", "Response copied");
+              copy.title = "Copied";
+              window.setTimeout(() => {
+                copy.innerHTML = copyIcon;
+                copy.setAttribute("aria-label", "Copy response");
+                copy.title = "Copy response";
+              }, 1200);
             } catch (error) {
               console.warn("Could not copy this response.", error);
-              copy.textContent = "Copy unavailable";
+              copy.title = "Copy unavailable";
             }
           });
-          tools.append(copy);
+          copy.innerHTML = copyIcon;
+          tools.append(copy, tokenCounts);
           content.append(tools);
         }
         if (message.role === "user") item.append(content);
@@ -340,7 +587,14 @@
           const detail = typeof result.detail === "string" ? result.detail : "The request could not be completed.";
           throw new Error(detail);
         }
-        messages[messages.length - 1] = { role: "assistant", content: result.answer || "" };
+        messages[messages.length - 1] = {
+          role: "assistant",
+          content: result.answer || "",
+          inputToken: result.inputToken,
+          outputToken: result.outputToken,
+          inputTokenPieces: result.inputTokenPieces,
+          outputTokenPieces: result.outputTokenPieces,
+        };
       } catch (error) {
         messages[messages.length - 1] = {
           role: "assistant",
