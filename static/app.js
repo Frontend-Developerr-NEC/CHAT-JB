@@ -1,16 +1,28 @@
     const STORAGE_KEY = "JB-Chat-chat-history-v1";
     const MODEL_STORAGE_KEY = "JB-Chat-selected-model-v1";
     const QUOTA_STORAGE_KEY = "JB-Chat-model-quotas-v1";
-    const DEFAULT_MODEL = "openai/gpt-oss-120b";
-    const ALLOWED_MODELS = [
-      "qwen/qwen3.8-27b",
+    const USER_PROFILE_KEY = "JB-Chat-user-profile-v1";
+    const DEFAULT_MODEL = "openai/gpt-oss-20b";
+    const IMAGE_FALLBACK_MODEL = "qwen/qwen3.8-27b";
+    const MODEL_TOKEN_FALLBACKS = [
       "openai/gpt-oss-20b",
+      "openai/gpt-oss-120b",
+      // "allam-2-7b",
+    ];
+    const ALLOWED_MODELS = [
+      "openai/gpt-oss-20b",
+      "qwen/qwen3.8-27b",
       "openai/gpt-oss-120b",
       // "allam-2-7b",
     ];
     const thread = document.getElementById("thread");
     const welcome = document.getElementById("welcome");
     const promptInput = document.getElementById("promptInput");
+    const fileInput = document.getElementById("fileInput");
+    const attachButton = document.getElementById("attachButton");
+    const selectedFilesElement = document.getElementById("selectedFiles");
+    const attachmentStatus = document.getElementById("attachmentStatus");
+    const profileFactsElement = document.getElementById("profileFacts");
     const sendButton = document.getElementById("sendButton");
     const chatList = document.getElementById("chatList");
     const conversationTitle = document.getElementById("conversationTitle");
@@ -26,17 +38,110 @@
     let currentChatId = null;
     let messages = [];
     let isSending = false;
-    let selectedModel = loadSelectedModel();
+    let selectedFiles = [];
+    let selectedModel = DEFAULT_MODEL;
     let modelQuotas = loadModelQuotas();
+    let userProfile = loadUserProfile();
+    const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+    const MAX_ATTACHMENT_COUNT = 5;
+    const ALLOWED_ATTACHMENT_EXTENSIONS = new Set(
+      ".png .apng .jpg .jpeg .jpe .jfif .gif .webp .bmp .dib .tif .tiff .ico .cur .icns .avif .avifs .heic .heics .heif .heifs .hif .jp2 .j2k .j2c .jpc .jpf .jpx .mpo .pcx .pbm .pgm .pnm .ppm .pfm .psd .qoi .ras .rgb .rgba .sgi .tga .xbm .xpm .pdf .docx .txt .md .rst .csv .tsv .json .jsonl .xml .yaml .yml .toml .ini .cfg .conf .html .htm .css .scss .sass .less .js .jsx .mjs .cjs .ts .tsx .py .pyi .ipynb .java .kt .kts .scala .groovy .c .h .cc .cpp .cxx .hpp .hh .hxx .cs .fs .fsx .vb .go .rs .php .rb .rake .swift .m .mm .sql .sh .bash .zsh .ps1 .bat .cmd .vue .svelte .astro .graphql .gql .proto .tf .hcl .gradle .properties .ex .exs .erl .hrl .hs .lhs .clj .cljs .cljc .edn .elm .dart .lua .pl .pm .r .jl .nim .zig .v .sv .vhd .vhdl .sol .move .wasm".split(" ")
+    );
 
-    function loadSelectedModel() {
+    function loadUserProfile() {
       try {
-        const savedModel = localStorage.getItem(MODEL_STORAGE_KEY);
-        return ALLOWED_MODELS.includes(savedModel) ? savedModel : DEFAULT_MODEL;
+        const saved = JSON.parse(localStorage.getItem(USER_PROFILE_KEY) || "{}");
+        if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
+        return Object.fromEntries(
+          Object.entries(saved)
+            .filter(([key, value]) => typeof key === "string" && typeof value === "string")
+            .slice(0, 30),
+        );
       } catch (error) {
-        console.warn("Could not load the saved model selection.", error);
-        return DEFAULT_MODEL;
+        console.warn("Could not load saved personal info.", error);
+        return {};
       }
+    }
+
+    function saveUserProfile() {
+      try {
+        localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(userProfile));
+      } catch (error) {
+        console.warn("Could not save personal info in this browser.", error);
+      }
+      renderUserProfile();
+    }
+
+    function renderUserProfile() {
+      profileFactsElement.replaceChildren();
+      const entries = Object.entries(userProfile);
+      if (entries.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "profile-empty";
+        empty.textContent = "No personal info saved.";
+        profileFactsElement.append(empty);
+        return;
+      }
+
+      entries.forEach(([key, value]) => {
+        const row = document.createElement("div");
+        row.className = "profile-fact";
+        const fact = document.createElement("span");
+        fact.textContent = `${key}: ${value}`;
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "Remove";
+        remove.setAttribute("aria-label", `Remove saved ${key}`);
+        remove.addEventListener("click", () => {
+          delete userProfile[key];
+          saveUserProfile();
+        });
+        row.append(fact, remove);
+        profileFactsElement.append(row);
+      });
+    }
+
+    function extractUserProfileFacts(text) {
+      const facts = {};
+      const addFact = (key, value) => {
+        const cleaned = value.trim().replace(/[.!?;]+$/, "").trim();
+        if (cleaned) facts[key] = cleaned.slice(0, 500);
+      };
+
+      const patterns = [
+        ["name", /\bmy name is\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/i],
+        ["name", /\b(?:please\s+)?call me\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/i],
+        ["age", /\bmy age is\s+(\d{1,3})(?:\s*(?:years? old|yo))?\b/i],
+        ["age", /\b(?:i am|i'm)\s+(\d{1,3})\s*(?:years? old|yo)\b/i],
+        ["address", /\bmy (?:home )?address is\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/i],
+        ["address", /\bi live at\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/i],
+        ["favorite color", /\bmy favorite colou?r is\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/i],
+        ["occupation", /\bi work as\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/i],
+        ["employer", /\bi work at\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/i],
+        ["location", /\bi live in\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/i],
+        ["origin", /\bi am from\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/i],
+      ];
+      patterns.forEach(([key, pattern]) => {
+        const match = text.match(pattern);
+        if (match) addFact(key, match[1]);
+      });
+
+      const labeledFactPattern = /\bmy\s+([a-z][a-z _-]{1,30}?)\s+is\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/gi;
+      for (const match of text.matchAll(labeledFactPattern)) {
+        addFact(match[1].trim().toLowerCase().replace(/\s+/g, " "), match[2]);
+      }
+      return facts;
+    }
+
+    function rememberUserProfileFacts(text) {
+      const updates = extractUserProfileFacts(text);
+      if (!Object.keys(updates).length) return;
+      userProfile = { ...userProfile, ...updates };
+      const entries = Object.entries(userProfile);
+      if (entries.length > 30) {
+        userProfile = Object.fromEntries(entries.slice(-30));
+      }
+      saveUserProfile();
     }
 
     function loadModelQuotas() {
@@ -61,10 +166,21 @@
         ? `${getModelLabel(selectedModel)} · ${percent}% of daily requests used`
         : `${getModelLabel(selectedModel)} · request quota not reported yet`;
     }
+
+    function selectModel(modelId) {
+      selectedModel = modelId;
+      try {
+        localStorage.setItem(MODEL_STORAGE_KEY, selectedModel);
+      } catch (error) {
+        console.warn("Could not save the selected model.", error);
+      }
+      updateSelectedModelLabel();
+      renderUserProfile();
+    }
     
     function saveModelQuota(modelId, quota) {
       if (!quota || typeof quota !== "object") return;
-      modelQuotas[modelId] = quota;
+      modelQuotas[modelId] = { ...quota, updated_at: Date.now() };
       try {
         localStorage.setItem(QUOTA_STORAGE_KEY, JSON.stringify(modelQuotas));
       } catch (error) {
@@ -73,13 +189,74 @@
       if (modelId === selectedModel) updateSelectedModelLabel();
     }
 
-    function renderModels(models) {
+    function isTokenLimitExceeded(quota) {
+      return typeof quota?.tokens_remaining === "number"
+        && quota.tokens_remaining <= 0
+        && typeof quota.updated_at === "number"
+        && Date.now() - quota.updated_at < 60_000;
+    }
+
+    function hasTokenLimitBeenReached(quota) {
+      return typeof quota?.tokens_remaining === "number"
+        && quota.tokens_remaining <= 0;
+    }
+
+    async function readApiResponse(response) {
+      const body = await response.text();
+      let result = null;
+      if (body) {
+        try {
+          result = JSON.parse(body);
+        } catch {
+          result = { detail: body };
+        }
+      }
+
+      if (!response.ok) {
+        const detail = result?.detail;
+        const message = typeof detail === "string"
+          ? detail
+          : Array.isArray(detail)
+            ? detail.map((item) => item?.msg || JSON.stringify(item)).join("; ")
+            : detail && typeof detail === "object"
+              ? JSON.stringify(detail)
+              : typeof result?.message === "string"
+                ? result.message
+                : `The server returned HTTP ${response.status} ${response.statusText}.`;
+        const error = new Error(message);
+        error.status = response.status;
+        error.responseBody = result;
+        throw error;
+      }
+
+      if (!result || typeof result !== "object" || Array.isArray(result)) {
+        throw new Error("The server returned an invalid response.");
+      }
+      return result;
+    }
+
+    function renderModels(models, { tokenFallback = false } = {}) {
       modelList.replaceChildren();
       const availableIds = new Set(models.map((model) => model.id));
-      const rows = ALLOWED_MODELS.map((id) => ({
+      const allFallbacksExhausted = MODEL_TOKEN_FALLBACKS.every(
+        (id) => isTokenLimitExceeded(modelQuotas[id]),
+      );
+      const modelIds = tokenFallback && !allFallbacksExhausted
+        ? ALLOWED_MODELS.filter((id) => id !== IMAGE_FALLBACK_MODEL)
+        : ALLOWED_MODELS;
+      if (tokenFallback) {
+        const notice = document.createElement("p");
+        notice.className = "model-dialog-message";
+        notice.textContent = allFallbacksExhausted
+          ? "All three alternative models have reached their token limits. Qwen is now available as a fallback."
+          : "A model has reached its token limit. Choose another available model; Qwen appears after all three alternatives are exhausted.";
+        modelList.append(notice);
+      }
+      const rows = modelIds.map((id) => ({
         id,
         name: id,
         available: availableIds.has(id),
+        tokenLimited: isTokenLimitExceeded(modelQuotas[id]),
       }));
 
       rows.forEach((model) => {
@@ -88,9 +265,14 @@
         const option = document.createElement("button");
         option.className = `model-option${model.id === selectedModel ? " selected" : ""}`;
         option.type = "button";
-        option.disabled = !model.available;
-        option.setAttribute("aria-label", `${model.name}, ${percent == null ? "quota unknown" : `${percent}% of daily requests used`}`);
-        console.log(`Rendering model option: ${model.name}, ${percent == null ? "quota unknown" : `${percent}% of daily requests used`}`);
+        option.disabled = !model.available || model.tokenLimited;
+        const status = model.tokenLimited
+          ? "token limit exceeded"
+          : percent == null
+            ? "quota unknown"
+            : `${percent}% of daily requests used`;
+        option.setAttribute("aria-label", `${model.name}, ${status}`);
+        // console.log(`Rendering model option: ${model.name}, ${percent == null ? "quota unknown" : `${percent}% of daily requests used`}`);
 
         const ring = document.createElement("span");
         ring.className = "quota-ring";
@@ -107,7 +289,9 @@
         const usage = document.createElement("span");
         usage.className = "model-option-usage";
         if (!model.available) {
-          usage.textContent = "Not currently listed by Groq";
+          usage.textContent = "Not currently listed by JB-Chat";
+        } else if (model.tokenLimited) {
+          usage.textContent = "Token limit exceeded; this model is temporarily disabled";
         } else if (!quota || percent == null) {
           usage.textContent = "Daily request usage not reported yet";
         } else {
@@ -116,7 +300,7 @@
         }
         copy.append(name, usage);
         option.append(ring, copy);
-        if (model.available) {
+        if (model.available && !model.tokenLimited) {
           option.addEventListener("click", () => {
             selectedModel = model.id;
             try {
@@ -132,22 +316,19 @@
       });
     }
 
-    async function openModelPicker() {
+    async function openModelPicker({ tokenFallback = false } = {}) {
       if (isSending) return;
       modelDialog.showModal();
       modelList.replaceChildren();
       const loading = document.createElement("p");
       loading.className = "model-dialog-message";
-      loading.textContent = "Loading models from Groq…";
+      loading.textContent = "Loading models from JB-Chat";
       modelList.append(loading);
       try {
         const response = await fetch("/models");
-        const result = await response.json();
-        if (!response.ok) {
-          throw new Error(typeof result.detail === "string" ? result.detail : "Could not load models.");
-        }
-        if (!Array.isArray(result.models)) throw new Error("Groq returned an invalid model list.");
-        renderModels(result.models);
+        const result = await readApiResponse(response);
+        if (!Array.isArray(result.models)) throw new Error("JB-Chat returned an invalid model list.");
+        renderModels(result.models, { tokenFallback });
       } catch (error) {
         const message = document.createElement("p");
         message.className = "model-dialog-message";
@@ -285,7 +466,9 @@
           const code = document.createElement("code");
           if (language) code.dataset.language = language;
           code.textContent = codeLines.join("\n");
-          pre.append(code);
+          const copyCode = createCopyButton(code.textContent, "code");
+          copyCode.classList.add("code-copy-button");
+          pre.append(code, copyCode);
           container.append(pre);
           continue;
         }
@@ -377,6 +560,62 @@
       }
     }
 
+    function createCopyButton(text, label) {
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "copy-button";
+      copy.setAttribute("aria-label", `Copy ${label}`);
+      copy.title = `Copy ${label}`;
+      const copyIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg>';
+      copy.innerHTML = copyIcon;
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          copy.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+          copy.setAttribute("aria-label", `${label} copied`);
+          copy.title = "Copied";
+          window.setTimeout(() => {
+            copy.innerHTML = copyIcon;
+            copy.setAttribute("aria-label", `Copy ${label}`);
+            copy.title = `Copy ${label}`;
+          }, 1200);
+        } catch (error) {
+          console.warn(`Could not copy this ${label}.`, error);
+          copy.title = "Copy unavailable";
+        }
+      });
+      return copy;
+    }
+
+    function renderSelectedFiles() {
+      selectedFilesElement.replaceChildren();
+      selectedFilesElement.hidden = selectedFiles.length === 0;
+      selectedFiles.forEach((file, index) => {
+        const chip = document.createElement("span");
+        chip.className = "selected-file";
+        const name = document.createElement("span");
+        name.textContent = file.name;
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.setAttribute("aria-label", `Remove ${file.name}`);
+        remove.title = `Remove ${file.name}`;
+        remove.textContent = "×";
+        remove.addEventListener("click", () => {
+          selectedFiles.splice(index, 1);
+          selectModel(DEFAULT_MODEL);
+          renderSelectedFiles();
+          resizeInput();
+        });
+        chip.append(name, remove);
+        selectedFilesElement.append(chip);
+      });
+    }
+
+    function showAttachmentStatus(message) {
+      attachmentStatus.textContent = message;
+      attachmentStatus.hidden = !message;
+    }
+
     function renderMessages() {
       thread.replaceChildren();
       if (messages.length === 0) {
@@ -386,12 +625,14 @@
       }
       welcome.hidden = true;
       messages.forEach((message, index) => {
+        const messageModel = message.model
+          || (message.role === "assistant" ? messages[index - 1]?.model : undefined);
         const item = document.createElement("article");
         item.className = `message ${message.role}${message.error ? " error" : ""}`;
         const avatar = document.createElement("div");
         avatar.className = "avatar";
         avatar.setAttribute("aria-hidden", "true");
-        avatar.textContent = message.role === "user" ? "Y" : "L";
+        avatar.textContent = message.role === "user" ? "J_B" : "JB";
         const content = document.createElement("div");
         content.className = "message-content";
         const name = document.createElement("div");
@@ -407,6 +648,23 @@
           text.textContent = message.content;
         }
         content.append(name, text);
+        if (message.role === "user") {
+          if (Array.isArray(message.attachments) && message.attachments.length) {
+            const attachmentList = document.createElement("div");
+            attachmentList.className = "message-attachments";
+            message.attachments.forEach((attachment) => {
+              const filename = document.createElement("span");
+              filename.className = "message-attachment";
+              filename.textContent = attachment.name;
+              attachmentList.append(filename);
+            });
+            content.append(attachmentList);
+          }
+          const tools = document.createElement("div");
+          tools.className = "message-tools user-message-tools";
+          tools.append(createCopyButton(message.content, "prompt"));
+          content.append(tools);
+        }
         if (message.role === "assistant" && !message.error) {
           const tools = document.createElement("div");
           tools.className = "message-tools";
@@ -471,30 +729,10 @@
             tokenCounts.append(tokenItem);
           });
 
-          const copy = document.createElement("button");
-          copy.type = "button";
-          copy.className = "copy-button";
-          copy.setAttribute("aria-label", "Copy response");
-          copy.title = "Copy response";
-          const copyIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg>';
-          copy.addEventListener("click", async () => {
-            try {
-              await navigator.clipboard.writeText(message.content);
-              copy.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-              copy.setAttribute("aria-label", "Response copied");
-              copy.title = "Copied";
-              window.setTimeout(() => {
-                copy.innerHTML = copyIcon;
-                copy.setAttribute("aria-label", "Copy response");
-                copy.title = "Copy response";
-              }, 1200);
-            } catch (error) {
-              console.warn("Could not copy this response.", error);
-              copy.title = "Copy unavailable";
-            }
-          });
-          copy.innerHTML = copyIcon;
-          tools.append(copy, tokenCounts);
+          tools.append(createCopyButton(message.content, "response"));
+          if (!["allam-2-7b", "qwen/qwen3.8-27b"].includes(messageModel)) {
+            tools.append(tokenCounts);
+          }
           content.append(tools);
         }
         if (message.role === "user") item.append(content);
@@ -550,16 +788,27 @@
     }
 
     async function sendMessage(value) {
-      const prompt = value.trim();
+      const submittedFiles = [...selectedFiles];
+      const prompt = value.trim() || (submittedFiles.length ? "Please inspect the attached files." : "");
       if (!prompt || isSending) return;
+      rememberUserProfileFacts(prompt);
       promptInput.value = "";
       resizeInput();
       isSending = true;
       modelButton.disabled = true;
       sendButton.disabled = true;
+      attachButton.disabled = true;
+      fileInput.disabled = true;
       const requestedModel = selectedModel;
       let showModelsAfterRateLimit = false;
-      messages.push({ role: "user", content: prompt });
+      let showTokenFallbacks = false;
+      const userMessage = {
+        role: "user",
+        content: prompt,
+        model: requestedModel,
+        attachments: submittedFiles.map((file) => ({ name: file.name })),
+      };
+      messages.push(userMessage);
       if (!currentChatId) {
         currentChatId = crypto.randomUUID();
         const title = prompt.length > 34 ? `${prompt.slice(0, 34).trimEnd()}…` : prompt;
@@ -574,28 +823,47 @@
         const history = messages.slice(0, -2)
           .filter((message) => ["user", "assistant"].includes(message.role) && !message.error)
           .slice(-12)
-          .map(({ role, content }) => ({ role, content }));
+          .map((message) => ({
+            role: message.role,
+            content: message.content,
+            ...(message.attachmentContext
+              ? { attachment_context: message.attachmentContext }
+              : {}),
+          }));
+        const formData = new FormData();
+        formData.append("prompt", prompt);
+        formData.append("history", JSON.stringify(history));
+        formData.append("model", requestedModel);
+        formData.append("profile", JSON.stringify(userProfile));
+        submittedFiles.forEach((file) => formData.append("files", file, file.name));
         const response = await fetch("/chat", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt, history, model: requestedModel }),
+          body: formData,
         });
-        const result = await response.json();
+        const result = await readApiResponse(response);
         saveModelQuota(requestedModel, result.quota);
-        if (!response.ok) {
-          showModelsAfterRateLimit = response.status === 429;
-          const detail = typeof result.detail === "string" ? result.detail : "The request could not be completed.";
-          throw new Error(detail);
-        }
+        showTokenFallbacks = hasTokenLimitBeenReached(result.quota);
+        showModelsAfterRateLimit = showTokenFallbacks;
+        userMessage.attachmentContext = result.attachmentContext;
+        selectedFiles = [];
+        renderSelectedFiles();
+        showAttachmentStatus("");
         messages[messages.length - 1] = {
           role: "assistant",
           content: result.answer || "",
+          model: requestedModel,
           inputToken: result.inputToken,
           outputToken: result.outputToken,
           inputTokenPieces: result.inputTokenPieces,
           outputTokenPieces: result.outputTokenPieces,
         };
       } catch (error) {
+        if (error instanceof Error) {
+          saveModelQuota(requestedModel, error.responseBody?.quota);
+          showModelsAfterRateLimit = error.status === 429;
+          showTokenFallbacks = showModelsAfterRateLimit
+            && isTokenLimitExceeded(modelQuotas[requestedModel]);
+        }
         messages[messages.length - 1] = {
           role: "assistant",
           content: error instanceof Error ? error.message : "Something went wrong. Please try again.",
@@ -603,11 +871,16 @@
         };
       } finally {
         isSending = false;
+        selectModel(DEFAULT_MODEL);
         modelButton.disabled = false;
-        sendButton.disabled = !promptInput.value.trim();
+        attachButton.disabled = false;
+        fileInput.disabled = false;
+        sendButton.disabled = !promptInput.value.trim() && selectedFiles.length === 0;
         renderMessages();
         persistCurrentChat();
-        if (showModelsAfterRateLimit) openModelPicker();
+        if (showModelsAfterRateLimit) {
+          openModelPicker({ tokenFallback: showTokenFallbacks });
+        }
       }
 
     }
@@ -615,10 +888,62 @@
     function resizeInput() {
       promptInput.style.height = "auto";
       promptInput.style.height = `${Math.min(promptInput.scrollHeight, 180)}px`;
-      sendButton.disabled = !promptInput.value.trim() || isSending;
+      sendButton.disabled = (!promptInput.value.trim() && selectedFiles.length === 0) || isSending;
+    }
+
+    async function isTextAttachment(file) {
+      try {
+        const sample = new TextDecoder("utf-8", { fatal: true }).decode(
+          await file.slice(0, 8192).arrayBuffer(),
+        );
+        return !/[\u0000-\u0008\u000b\u000e-\u001f]/.test(sample);
+      } catch {
+        return false;
+      }
     }
 
     document.getElementById("newChat").addEventListener("click", newChat);
+    document.getElementById("clearProfileButton").addEventListener("click", () => {
+      userProfile = {};
+      saveUserProfile();
+    });
+    attachButton.addEventListener("click", () => {
+      if (!isSending) fileInput.click();
+    });
+    fileInput.addEventListener("change", async () => {
+      const errors = [];
+      let addedFile = false;
+      for (const file of fileInput.files) {
+        const extension = file.name.includes(".")
+          ? file.name.slice(file.name.lastIndexOf(".")).toLowerCase()
+          : "";
+        const isImage = file.type.startsWith("image/");
+        const isText = file.type.startsWith("text/")
+          || (!isImage && await isTextAttachment(file));
+        if (!ALLOWED_ATTACHMENT_EXTENSIONS.has(extension) && !isImage && !isText) {
+          errors.push(`${file.name}: unsupported file type.`);
+          continue;
+        }
+        if (selectedFiles.length >= MAX_ATTACHMENT_COUNT) {
+          errors.push(`You can attach up to ${MAX_ATTACHMENT_COUNT} files per message.`);
+          break;
+        }
+        const selectedBytes = selectedFiles.reduce((total, item) => total + item.size, 0);
+        if (selectedBytes + file.size > MAX_ATTACHMENT_BYTES) {
+          errors.push("Attachments cannot exceed 10 MB in total.");
+          continue;
+        }
+        selectedFiles.push(file);
+        addedFile = true;
+      }
+      if (addedFile) {
+        selectModel("qwen/qwen3.8-27b");
+      }
+      fileInput.value = "";
+      renderSelectedFiles();
+      showAttachmentStatus(errors.join(" "));
+      resizeInput();
+    });
     modelButton.addEventListener("click", openModelPicker);
     document.getElementById("closeModelDialog").addEventListener("click", () => modelDialog.close());
     document.getElementById("chatForm").addEventListener("submit", (event) => {
@@ -647,6 +972,6 @@
       scrim.classList.add("visible");
     });
     scrim.addEventListener("click", closeSidebar);
-    updateSelectedModelLabel();
+    selectModel(DEFAULT_MODEL);
     renderChatList();
     renderMessages();
