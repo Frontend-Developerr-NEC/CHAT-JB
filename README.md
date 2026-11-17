@@ -10,6 +10,7 @@ JB-Chat is a lightweight, browser-based AI chat application built with FastAPI a
 - **Image and document processing:** images are resized and converted to JPEG; PDF and DOCX text is extracted; scanned PDFs are not OCR-processed.
 - **Saved personal info:** optionally keep profile facts in browser storage, review them, remove individual facts, or clear them.
 - **Convenience controls:** copy prompts and code blocks, select models, and remove queued attachments.
+- **Translator and speech tools:** choose from 76 supported languages, translate microphone speech into the composer with automatic speech-language detection, or translate selected response text and read it aloud.
 - **Token display:** input and output token sections are hidden for `allam-2-7b` and `qwen/qwen3.8-27b` responses.
 - **Quota handling:** show provider quota data when available and open model selection when a token limit is reached.
 - **English responses:** the backend instructs configured models to respond in English.
@@ -144,6 +145,18 @@ curl http://127.0.0.1:8000/chat \
 
 A successful response includes `answer`, `quota`, token counts and token pieces when available, and extracted `attachmentContext`. The interface does not display input/output token sections for `allam-2-7b` or `qwen/qwen3.8-27b`. Token counts are not available for every model. Errors use a JSON `detail` field; rate-limit responses may also include quota data.
 
+### `GET /languages`
+
+Returns the translator's supported language codes and display names.
+
+### `POST /translate`
+
+Send `multipart/form-data` fields `text` (up to 8,000 characters) and `target_language` (a supported language code) to translate text for speech playback.
+
+### `POST /translate-speech`
+
+Send a `multipart/form-data` audio recording in `audio` and a supported `target_language`. Speech is automatically detected and transcribed before translation. Recordings are limited to 20 MB.
+
 ## Troubleshooting
 
 - **`{"detail":"Method Not Allowed"}` or HTTP 405:** use `POST /chat` for chat requests and `GET /models` to load models. Opening `/chat` directly in a browser sends a `GET` request and is not supported.
@@ -158,6 +171,8 @@ A successful response includes `answer`, `quota`, token counts and token pieces 
 
 - Chat history and saved profile facts are stored in the browser's `localStorage`; JB-Chat does not use a database for them.
 - The browser sends the current message, relevant conversation history, saved profile, and attachments to the JB-Chat backend. The backend forwards relevant content to Groq to generate a response.
+- When speech translation is used, microphone recordings are sent to the backend and forwarded to Groq for speech recognition and translation. Selected response text is sent to Groq when translated for speech playback. Audio is processed in memory and is not intentionally saved by the application.
+- Read-aloud uses the browser's built-in speech synthesis; available voices depend on the browser and operating system.
 - Uploaded files are processed in memory by the backend and are not intentionally saved by the application.
 - Do not save or submit sensitive information unless you are comfortable sharing it with the configured AI provider. Clear profile facts in **Saved personal info** and clear browser storage to remove locally saved data.
 
