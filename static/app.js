@@ -15,6 +15,7 @@
       "openai/gpt-oss-120b",
       // "allam-2-7b",
     ];
+    const SENSITIVE_PROFILE_KEY_PATTERN = /\b(password|passcode|secret|api key|access token|private key|credit card|debit card|card number|bank account|account number|routing number|social security|ssn|passport number|national id|tax id|driver'?s license|medical|health|diagnosis|prescription|medication|therapy|disability|pin)\b/i;
     const thread = document.getElementById("thread");
     const welcome = document.getElementById("welcome");
     const promptInput = document.getElementById("promptInput");
@@ -70,11 +71,20 @@
       try {
         const saved = JSON.parse(localStorage.getItem(USER_PROFILE_KEY) || "{}");
         if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
-        return Object.fromEntries(
-          Object.entries(saved)
-            .filter(([key, value]) => typeof key === "string" && typeof value === "string")
-            .slice(0, 30),
+        const entries = Object.entries(saved).filter(([key, value]) =>
+          typeof key === "string"
+          && typeof value === "string"
+          && !SENSITIVE_PROFILE_KEY_PATTERN.test(key)
         );
+        const profile = Object.fromEntries(entries.slice(0, 30));
+        if (entries.length !== Object.keys(saved).length || entries.length > 30) {
+          try {
+            localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(profile));
+          } catch (error) {
+            console.warn("Could not remove unsupported saved profile facts.", error);
+          }
+        }
+        return profile;
       } catch (error) {
         console.warn("Could not load saved personal info.", error);
         return {};
@@ -123,7 +133,20 @@
       const facts = {};
       const addFact = (key, value) => {
         const cleaned = value.trim().replace(/[.!?;]+$/, "").trim();
-        if (cleaned) facts[key] = cleaned.slice(0, 500);
+        const normalizedKey = key
+          .trim()
+          .replace(/['’]s\b/gi, "")
+          .toLowerCase()
+          .replace(/[_-]+/g, " ")
+          .replace(/\s+/g, " ")
+          .slice(0, 80);
+        if (
+          cleaned
+          && normalizedKey
+          && !SENSITIVE_PROFILE_KEY_PATTERN.test(`${normalizedKey} ${cleaned}`)
+        ) {
+          facts[normalizedKey] = cleaned.slice(0, 500);
+        }
       };
 
       const patterns = [
@@ -144,9 +167,21 @@
         if (match) addFact(key, match[1]);
       });
 
-      const labeledFactPattern = /\bmy\s+([a-z][a-z _-]{1,30}?)\s+is\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/gi;
+      const labeledFactPattern = /\bmy\s+([a-z][a-z0-9 _'’-]{1,60}?)\s+(?:is|are)\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/gi;
       for (const match of text.matchAll(labeledFactPattern)) {
-        addFact(match[1].trim().toLowerCase().replace(/\s+/g, " "), match[2]);
+        addFact(match[1], match[2]);
+      }
+
+      const preferencePattern = /\bI\s+(like|love|prefer|enjoy|dislike|hate)\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/gi;
+      for (const match of text.matchAll(preferencePattern)) {
+        const preference = match[2].trim();
+        addFact(`preference: ${preference.slice(0, 60)}`, `${match[1].toLowerCase()} ${preference}`);
+      }
+
+      const rememberedFactPattern = /\b(?:remember(?: that)?|keep in mind that)\s*[:,—-]?\s*(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/gi;
+      for (const match of text.matchAll(rememberedFactPattern)) {
+        const fact = match[1].trim();
+        addFact(`remembered: ${fact.slice(0, 60)}`, fact);
       }
       return facts;
     }
@@ -386,7 +421,7 @@
         const open = document.createElement("button");
         open.className = "chat-item";
         open.type = "button";
-        open.style.cssText = "flex:1;min-width:0;padding:0;background:transparent";
+        open.style.cssText = "flex:1;min-width:0;padding:0";
         open.setAttribute("aria-label", `Open chat: ${chat.title}`);
         const title = document.createElement("span");
         title.className = "chat-title";
