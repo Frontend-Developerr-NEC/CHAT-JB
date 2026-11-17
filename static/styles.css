@@ -239,6 +239,61 @@
     .model-option-usage { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
     .model-dialog-message { margin: 8px 2px; color: var(--muted); font-size: 13px; }
 
+    .language-dialog {
+      width: min(440px, calc(100vw - 28px));
+      padding: 22px;
+      color: var(--ink);
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 20px 70px rgb(34 38 32 / 22%);
+    }
+    .language-dialog::backdrop { background: rgb(18 21 18 / 38%); }
+    .language-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .language-dialog h2 { margin: 0; font-size: 18px; font-weight: 650; }
+    .language-dialog-copy { margin: 9px 0 18px; color: var(--muted); font-size: 13px; }
+    .language-label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 650; }
+    .language-search {
+      display: block;
+      width: 100%;
+      min-height: 40px;
+      margin-bottom: 8px;
+      padding: 8px 10px;
+      color: var(--ink);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      font: inherit;
+      font-size: 13px;
+    }
+    .language-select {
+      width: 100%;
+      min-height: 42px;
+      padding: 8px 10px;
+      color: var(--ink);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      font: inherit;
+    }
+    .speech-status, .speak-status { min-height: 20px; margin: 9px 0 0; color: var(--muted); font-size: 12px; }
+    .speech-status.error, .speak-status.error { color: #b42318; }
+    .language-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+    .language-secondary-button, .language-primary-button {
+      min-height: 36px;
+      padding: 7px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .language-secondary-button { color: var(--ink); background: #fff; }
+    .language-primary-button { color: #fff; background: var(--accent); border-color: var(--accent); }
+    .language-primary-button:hover:not(:disabled) { background: var(--accent-dark); }
+    .language-dialog button:disabled { cursor: not-allowed; opacity: .5; }
+
     .content { display: flex; flex: 1; min-height: 0; flex-direction: column; align-items: center; }
     .thread {
       display: flex;
@@ -402,6 +457,9 @@
     .message-tools button:hover { color: var(--ink); background: #e2e8f0; }
     .message-tools { align-items: flex-start; flex-direction: column; gap: 4px; }
     .message-tools .copy-button { display: inline-grid; width: 28px; height: 28px; place-items: center; padding: 5px; }
+    .assistant-actions { display: flex; width: 100%; align-items: center; justify-content: space-between; }
+    .message-tools .speak-selection-button { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; }
+    .selection-feedback { margin: 0; color: #b42318; font-size: 11px; }
     .token-counts { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
     .token-count-item { min-width: 0; }
     .token-count-group { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
@@ -461,6 +519,21 @@
     }
     .attach-button:hover:not(:disabled) { color: var(--accent-dark); background: #eff6ff; }
     .attach-button:disabled { cursor: not-allowed; opacity: .45; }
+    .translate-button {
+      display: grid;
+      flex: 0 0 34px;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      padding: 0;
+      color: var(--muted);
+      background: transparent;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      cursor: pointer;
+    }
+    .translate-button:hover:not(:disabled) { color: var(--accent-dark); background: #eff6ff; }
+    .translate-button:disabled { cursor: not-allowed; opacity: .45; }
     .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgb(29 78 216 / 16%); }
     .composer textarea {
       display: block;
@@ -577,6 +650,8 @@
       .model-pill { padding: 6px 8px; font-size: 10px; }
       .thread { padding: 23px 17px 18px; }
       .composer-wrap { padding: 8px 14px 13px; }
+      .composer { gap: 8px; padding-left: 10px; padding-right: 9px; }
+      .attach-button, .translate-button, .send-button { flex-basis: 32px; width: 32px; height: 32px; }
       .delete-chat { display: grid; }
     }
 

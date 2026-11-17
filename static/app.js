@@ -34,6 +34,24 @@
     const selectedModelName = document.getElementById("selectedModelName");
     const selectedModelTitle = selectedModelName.querySelector(".selected-model-title");
     const selectedModelQuota = selectedModelName.querySelector(".selected-model-quota");
+    const translateButton = document.getElementById("translateButton");
+    const speechDialog = document.getElementById("speechDialog");
+    const speechTargetLanguage = document.getElementById("speechTargetLanguage");
+    const speechLanguageSearch = document.getElementById("speechLanguageSearch");
+    const speechStatus = document.getElementById("speechStatus");
+    const recordSpeechButton = document.getElementById("recordSpeech");
+    const speakDialog = document.getElementById("speakDialog");
+    const speakTargetLanguage = document.getElementById("speakTargetLanguage");
+    const speakLanguageSearch = document.getElementById("speakLanguageSearch");
+    const speakStatus = document.getElementById("speakStatus");
+    let languagesPromise;
+    let activeRecorder = null;
+    let activeStream = null;
+    let recordingChunks = [];
+    let recordingTimeout;
+    let speechRequestController = null;
+    let selectedSpeakText = "";
+    let availableLanguages = [];
     let chats = loadChats();
     let currentChatId = null;
     let messages = [];
@@ -616,6 +634,253 @@
       attachmentStatus.hidden = !message;
     }
 
+    async function loadLanguages() {
+      if (!languagesPromise) {
+        languagesPromise = fetch("/languages")
+          .then(readApiResponse)
+          .then((result) => {
+            if (!Array.isArray(result.languages) || result.languages.length === 0) {
+              throw new Error("The language list is unavailable.");
+            }
+            availableLanguages = result.languages;
+            [speechTargetLanguage, speakTargetLanguage].forEach((select) => {
+              select.dataset.selectedLanguage = "en-US";
+              renderLanguageOptions(select, "");
+            });
+          })
+          .catch((error) => {
+            languagesPromise = null;
+            throw error;
+          });
+      }
+      return languagesPromise;
+    }
+
+    function renderLanguageOptions(select, query) {
+      const search = query.trim().toLocaleLowerCase();
+      const selectedLanguage = availableLanguages.find(
+        ({ code }) => code === select.dataset.selectedLanguage,
+      );
+      const matchingLanguages = availableLanguages.filter(({ code, name }) =>
+        name.toLocaleLowerCase().includes(search)
+        || code.toLocaleLowerCase().includes(search),
+      );
+      if (search && matchingLanguages.length === 0) {
+        const empty = document.createElement("option");
+        empty.value = selectedLanguage?.code || "";
+        empty.textContent = selectedLanguage
+          ? `No matches — ${selectedLanguage.name} remains selected`
+          : "No matching languages";
+        empty.selected = true;
+        select.replaceChildren(empty);
+        return;
+      }
+      const visibleLanguages = [...matchingLanguages];
+      if (selectedLanguage && !matchingLanguages.some(({ code }) => code === selectedLanguage.code)) {
+        visibleLanguages.unshift({
+          ...selectedLanguage,
+          name: `${selectedLanguage.name} (current selection)`,
+        });
+      }
+
+      select.replaceChildren();
+      visibleLanguages.forEach(({ code, name }) => {
+        const option = document.createElement("option");
+        option.value = code;
+        option.textContent = name;
+        select.append(option);
+      });
+      select.value = select.dataset.selectedLanguage;
+    }
+
+    function setSpeechStatus(message, isError = false) {
+      speechStatus.textContent = message;
+      speechStatus.classList.toggle("error", isError);
+    }
+
+    function stopMediaStream() {
+      if (recordingTimeout) {
+        window.clearTimeout(recordingTimeout);
+        recordingTimeout = undefined;
+      }
+      activeStream?.getTracks().forEach((track) => track.stop());
+      activeStream = null;
+      activeRecorder = null;
+      recordingChunks = [];
+    }
+
+    async function submitSpeechRecording(blob, targetLanguage) {
+      if (blob.size === 0) {
+        setSpeechStatus("The recording was empty. Try speaking for a little longer.", true);
+        recordSpeechButton.disabled = false;
+        recordSpeechButton.textContent = "Start speaking";
+        return;
+      }
+      setSpeechStatus("Detecting your speech and translating it…");
+      recordSpeechButton.disabled = true;
+      speechRequestController = new AbortController();
+      const formData = new FormData();
+      formData.append("target_language", targetLanguage);
+      const extension = blob.type.includes("mp4") ? "mp4" : blob.type.includes("ogg") ? "ogg" : "webm";
+      formData.append("audio", blob, `speech.${extension}`);
+      try {
+        const response = await fetch("/translate-speech", {
+          method: "POST",
+          body: formData,
+          signal: speechRequestController.signal,
+        });
+        const result = await readApiResponse(response);
+        promptInput.value = result.translatedText;
+        resizeInput();
+        speechDialog.close();
+        promptInput.focus();
+      } catch (error) {
+        if (error.name !== "AbortError") {
+          setSpeechStatus(error.message || "Could not translate the recording.", true);
+          recordSpeechButton.disabled = false;
+          recordSpeechButton.textContent = "Start speaking";
+        }
+      } finally {
+        speechRequestController = null;
+      }
+    }
+
+    async function toggleSpeechRecording() {
+      if (activeRecorder?.state === "recording") {
+        recordSpeechButton.disabled = true;
+        recordSpeechButton.textContent = "Translating…";
+        setSpeechStatus("Processing your recording…");
+        activeRecorder.stop();
+        return;
+      }
+      if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+        setSpeechStatus("Audio recording is not supported in this browser.", true);
+        return;
+      }
+      recordSpeechButton.disabled = true;
+      setSpeechStatus("Waiting for microphone permission…");
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (!speechDialog.open) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        activeStream = stream;
+        activeRecorder = new MediaRecorder(stream);
+        recordingChunks = [];
+        activeRecorder.addEventListener("dataavailable", (event) => {
+          if (event.data.size) recordingChunks.push(event.data);
+        });
+        activeRecorder.addEventListener("error", () => {
+          stopMediaStream();
+          recordSpeechButton.disabled = false;
+          recordSpeechButton.textContent = "Start speaking";
+          setSpeechStatus("The browser could not record audio. Please try again.", true);
+        }, { once: true });
+        activeRecorder.addEventListener("stop", () => {
+          const blob = new Blob(recordingChunks, { type: activeRecorder?.mimeType || "audio/webm" });
+          stopMediaStream();
+          if (speechDialog.open) {
+            void submitSpeechRecording(blob, speechTargetLanguage.value);
+          }
+        }, { once: true });
+        activeRecorder.start();
+        recordSpeechButton.disabled = false;
+        recordSpeechButton.textContent = "Stop and translate";
+        setSpeechStatus("Listening… Speak in any language, then select Stop and translate.");
+        recordingTimeout = window.setTimeout(() => {
+          if (activeRecorder?.state === "recording") {
+            recordSpeechButton.disabled = true;
+            recordSpeechButton.textContent = "Translating…";
+            setSpeechStatus("Two-minute recording limit reached. Processing…");
+            activeRecorder.stop();
+          }
+        }, 120_000);
+      } catch (error) {
+        stopMediaStream();
+        recordSpeechButton.disabled = false;
+        const message = error.name === "NotAllowedError"
+          ? "Microphone access was denied. Allow microphone access and try again."
+          : error.name === "NotFoundError"
+            ? "No microphone was found for this device."
+            : "Could not start the microphone. Check its permissions and try again.";
+        setSpeechStatus(message, true);
+      }
+    }
+
+    async function openSpeechTranslator() {
+      try {
+        await loadLanguages();
+        speechLanguageSearch.value = "";
+        renderLanguageOptions(speechTargetLanguage, "");
+        setSpeechStatus("");
+        recordSpeechButton.disabled = false;
+        recordSpeechButton.textContent = "Start speaking";
+        speechDialog.showModal();
+      } catch (error) {
+        showAttachmentStatus(`Could not load translation languages: ${error.message}`);
+      }
+    }
+
+    async function openSpeakDialog(text) {
+      selectedSpeakText = text;
+      speakStatus.textContent = "";
+      speakStatus.classList.remove("error");
+      try {
+        await loadLanguages();
+        speakLanguageSearch.value = "";
+        renderLanguageOptions(speakTargetLanguage, "");
+        speakDialog.showModal();
+      } catch (error) {
+        showAttachmentStatus(`Could not load translation languages: ${error.message}`);
+      }
+    }
+
+    async function translateAndSpeak() {
+      if (!selectedSpeakText || selectedSpeakText.length > 8000) {
+        speakStatus.textContent = "Select a shorter passage (up to 8,000 characters) in the response.";
+        speakStatus.classList.add("error");
+        return;
+      }
+      if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
+        speakStatus.textContent = "Speech playback is not supported in this browser.";
+        speakStatus.classList.add("error");
+        return;
+      }
+      const button = document.getElementById("confirmSpeak");
+      button.disabled = true;
+      speakStatus.textContent = "Translating selected text…";
+      speakStatus.classList.remove("error");
+      try {
+        const formData = new FormData();
+        formData.append("text", selectedSpeakText);
+        formData.append("target_language", speakTargetLanguage.value);
+        const response = await fetch("/translate", { method: "POST", body: formData });
+        const result = await readApiResponse(response);
+        const utterance = new SpeechSynthesisUtterance(result.translatedText);
+        utterance.lang = speakTargetLanguage.value;
+        const languagePrefix = speakTargetLanguage.value.split("-")[0].toLowerCase();
+        const voice = window.speechSynthesis.getVoices().find((item) =>
+          item.lang.toLowerCase() === speakTargetLanguage.value.toLowerCase()
+          || item.lang.toLowerCase().startsWith(`${languagePrefix}-`),
+        );
+        if (voice) utterance.voice = voice;
+        utterance.onerror = (event) => {
+          console.warn("Could not speak the translated text.", event.error);
+          speakStatus.textContent = "The browser could not play speech in this language.";
+          speakStatus.classList.add("error");
+        };
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+        speakStatus.textContent = "Speaking the translated selection…";
+      } catch (error) {
+        speakStatus.textContent = error.message || "Could not translate the selected text.";
+        speakStatus.classList.add("error");
+      } finally {
+        button.disabled = false;
+      }
+    }
+
     function renderMessages() {
       thread.replaceChildren();
       if (messages.length === 0) {
@@ -668,6 +933,31 @@
         if (message.role === "assistant" && !message.error) {
           const tools = document.createElement("div");
           tools.className = "message-tools";
+          const actions = document.createElement("div");
+          actions.className = "assistant-actions";
+          const speakSelection = document.createElement("button");
+          speakSelection.type = "button";
+          speakSelection.className = "speak-selection-button";
+          speakSelection.setAttribute("aria-label", "Translate and speak selected response text");
+          speakSelection.title = "Translate and speak selected text";
+          speakSelection.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M15.5 8.5a5 5 0 0 1 0 7m3-10a9 9 0 0 1 0 13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span>Speak</span>';
+          speakSelection.addEventListener("mousedown", (event) => event.preventDefault());
+          const selectionFeedback = document.createElement("p");
+          selectionFeedback.className = "selection-feedback";
+          selectionFeedback.hidden = true;
+          speakSelection.addEventListener("click", () => {
+            const selection = window.getSelection();
+            const anchor = selection?.anchorNode;
+            const focus = selection?.focusNode;
+            if (!selection || !selection.toString().trim() || !text.contains(anchor) || !text.contains(focus)) {
+              selectionFeedback.textContent = "Select a line or passage in this response first.";
+              selectionFeedback.hidden = false;
+              return;
+            }
+            selectionFeedback.hidden = true;
+            void openSpeakDialog(selection.toString().trim());
+          });
+          actions.append(createCopyButton(message.content, "response"), speakSelection);
           const tokenCounts = document.createElement("div");
           tokenCounts.className = "token-counts";
 
@@ -729,7 +1019,7 @@
             tokenCounts.append(tokenItem);
           });
 
-          tools.append(createCopyButton(message.content, "response"));
+          tools.append(actions, selectionFeedback);
           if (!["allam-2-7b", "qwen/qwen3.8-27b"].includes(messageModel)) {
             tools.append(tokenCounts);
           }
@@ -798,6 +1088,7 @@
       modelButton.disabled = true;
       sendButton.disabled = true;
       attachButton.disabled = true;
+      translateButton.disabled = true;
       fileInput.disabled = true;
       const requestedModel = selectedModel;
       let showModelsAfterRateLimit = false;
@@ -874,6 +1165,7 @@
         selectModel(DEFAULT_MODEL);
         modelButton.disabled = false;
         attachButton.disabled = false;
+        translateButton.disabled = false;
         fileInput.disabled = false;
         sendButton.disabled = !promptInput.value.trim() && selectedFiles.length === 0;
         renderMessages();
@@ -910,6 +1202,32 @@
     attachButton.addEventListener("click", () => {
       if (!isSending) fileInput.click();
     });
+    translateButton.addEventListener("click", openSpeechTranslator);
+    speechLanguageSearch.addEventListener("input", () => {
+      renderLanguageOptions(speechTargetLanguage, speechLanguageSearch.value);
+    });
+    speechTargetLanguage.addEventListener("change", () => {
+      speechTargetLanguage.dataset.selectedLanguage = speechTargetLanguage.value;
+    });
+    speakLanguageSearch.addEventListener("input", () => {
+      renderLanguageOptions(speakTargetLanguage, speakLanguageSearch.value);
+    });
+    speakTargetLanguage.addEventListener("change", () => {
+      speakTargetLanguage.dataset.selectedLanguage = speakTargetLanguage.value;
+    });
+    recordSpeechButton.addEventListener("click", toggleSpeechRecording);
+    document.getElementById("closeSpeechDialog").addEventListener("click", () => speechDialog.close());
+    document.getElementById("cancelSpeech").addEventListener("click", () => speechDialog.close());
+    speechDialog.addEventListener("close", () => {
+      speechRequestController?.abort();
+      if (activeRecorder?.state === "recording") activeRecorder.stop();
+      stopMediaStream();
+      recordSpeechButton.disabled = false;
+      recordSpeechButton.textContent = "Start speaking";
+    });
+    document.getElementById("closeSpeakDialog").addEventListener("click", () => speakDialog.close());
+    document.getElementById("cancelSpeak").addEventListener("click", () => speakDialog.close());
+    document.getElementById("confirmSpeak").addEventListener("click", translateAndSpeak);
     fileInput.addEventListener("change", async () => {
       const errors = [];
       let addedFile = false;
