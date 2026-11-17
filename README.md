@@ -8,7 +8,7 @@ JB-Chat is a lightweight, browser-based AI chat application built with FastAPI a
 - **Chat history:** conversations are saved in the current browser using `localStorage`.
 - **File attachments:** attach up to five files with a combined size of 10 MB per message. Supported inputs include images, PDFs, DOCX documents, and UTF-8 text or source files.
 - **Image and document processing:** images are resized and converted to JPEG; PDF and DOCX text is extracted; scanned PDFs are not OCR-processed.
-- **Saved personal info:** optionally keep profile facts in browser storage, review them, remove individual facts, or clear them.
+- **Saved personal info:** automatically remember supported statements such as names, relationships, preferences, and facts written as “My … is …”. Use “Remember that …” for other useful facts. Review or remove saved facts in the browser. Facts labeled as passwords, financial account/card numbers, IDs, or health details are excluded from profile extraction, but this text-pattern check cannot catch every sensitive detail.
 - **Convenience controls:** copy prompts and code blocks, select models, and remove queued attachments.
 - **Translator and speech tools:** choose from 76 supported languages, translate microphone speech into the composer with automatic speech-language detection, or translate selected response text and read it aloud.
 - **Token display:** input and output token sections are hidden for `allam-2-7b` and `qwen/qwen3.8-27b` responses.
@@ -169,12 +169,12 @@ Send a `multipart/form-data` audio recording in `audio` and a supported `target_
 
 ## Privacy and data handling
 
-- Chat history and saved profile facts are stored in the browser's `localStorage`; JB-Chat does not use a database for them.
+- Chat history and saved profile facts are stored in the browser's `localStorage`; JB-Chat does not use a database for them. The profile extractor recognizes common “My … is/are …” statements, preference statements such as “I like …”, and explicit “Remember that …” notes. Profile facts are included with chat requests so the model can answer relevant follow-ups and personalize suggestions; the model should ask when needed recommendation details are missing.
 - The browser sends the current message, relevant conversation history, saved profile, and attachments to the JB-Chat backend. The backend forwards relevant content to Groq to generate a response.
 - When speech translation is used, microphone recordings are sent to the backend and forwarded to Groq for speech recognition and translation. Selected response text is sent to Groq when translated for speech playback. Audio is processed in memory and is not intentionally saved by the application.
 - Read-aloud uses the browser's built-in speech synthesis; available voices depend on the browser and operating system.
 - Uploaded files are processed in memory by the backend and are not intentionally saved by the application.
-- Do not save or submit sensitive information unless you are comfortable sharing it with the configured AI provider. Clear profile facts in **Saved personal info** and clear browser storage to remove locally saved data.
+- Profile extraction skips facts labeled as passwords, access tokens, account/card numbers, government IDs, and health details, but this is a basic text-pattern safeguard and cannot identify every sensitive detail. Full chat history is still stored in browser `localStorage`, including messages that were not extracted as profile facts; recent conversation turns and the profile are sent to Groq with requests. Do not submit confidential information unless you are comfortable sharing it with the configured AI provider. Remove profile facts in **Saved personal info**, delete conversations in the chat list, and clear browser storage to remove locally saved data.
 
 ## Project structure
 
