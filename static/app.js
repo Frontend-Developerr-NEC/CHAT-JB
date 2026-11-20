@@ -2,18 +2,17 @@
     const MODEL_STORAGE_KEY = "JB-Chat-selected-model-v1";
     const QUOTA_STORAGE_KEY = "JB-Chat-model-quotas-v1";
     const USER_PROFILE_KEY = "JB-Chat-user-profile-v1";
+    let appAccessToken = "";
     const DEFAULT_MODEL = "openai/gpt-oss-20b";
     const IMAGE_FALLBACK_MODEL = "qwen/qwen3.8-27b";
     const MODEL_TOKEN_FALLBACKS = [
       "openai/gpt-oss-20b",
       "openai/gpt-oss-120b",
-      // "allam-2-7b",
     ];
     const ALLOWED_MODELS = [
       "openai/gpt-oss-20b",
       "qwen/qwen3.8-27b",
       "openai/gpt-oss-120b",
-      // "allam-2-7b",
     ];
     const SENSITIVE_PROFILE_KEY_PATTERN = /\b(password|passcode|secret|api key|access token|private key|credit card|debit card|card number|bank account|account number|routing number|social security|ssn|passport number|national id|tax id|driver'?s license|medical|health|diagnosis|prescription|medication|therapy|disability|pin)\b/i;
     const thread = document.getElementById("thread");
@@ -32,6 +31,7 @@
     const modelButton = document.getElementById("modelButton");
     const modelDialog = document.getElementById("modelDialog");
     const modelList = document.getElementById("modelList");
+    const authControls = document.getElementById("authControls");
     const selectedModelName = document.getElementById("selectedModelName");
     const selectedModelTitle = selectedModelName.querySelector(".selected-model-title");
     const selectedModelQuota = selectedModelName.querySelector(".selected-model-quota");
@@ -66,6 +66,58 @@
     const ALLOWED_ATTACHMENT_EXTENSIONS = new Set(
       ".png .apng .jpg .jpeg .jpe .jfif .gif .webp .bmp .dib .tif .tiff .ico .cur .icns .avif .avifs .heic .heics .heif .heifs .hif .jp2 .j2k .j2c .jpc .jpf .jpx .mpo .pcx .pbm .pgm .pnm .ppm .pfm .psd .qoi .ras .rgb .rgba .sgi .tga .xbm .xpm .pdf .docx .txt .md .rst .csv .tsv .json .jsonl .xml .yaml .yml .toml .ini .cfg .conf .html .htm .css .scss .sass .less .js .jsx .mjs .cjs .ts .tsx .py .pyi .ipynb .java .kt .kts .scala .groovy .c .h .cc .cpp .cxx .hpp .hh .hxx .cs .fs .fsx .vb .go .rs .php .rb .rake .swift .m .mm .sql .sh .bash .zsh .ps1 .bat .cmd .vue .svelte .astro .graphql .gql .proto .tf .hcl .gradle .properties .ex .exs .erl .hrl .hs .lhs .clj .cljs .cljc .edn .elm .dart .lua .pl .pm .r .jl .nim .zig .v .sv .vhd .vhdl .sol .move .wasm".split(" ")
     );
+
+    function getAssistantName() {
+      return userProfile["assistant name"]?.trim() || "JB-Chat";
+    }
+
+    async function fetchWithAccessToken(url, options = {}) {
+      const request = () => fetch(url, {
+        ...options,
+        headers: {
+          ...Object.fromEntries(new Headers(options.headers)),
+          ...(appAccessToken ? { Authorization: `Bearer ${appAccessToken}` } : {}),
+        },
+      });
+      return request();
+    }
+
+    async function initializeGoogleSignIn() {
+      try {
+        const response = await fetch("/auth/me", { cache: "no-store" });
+        const auth = await readApiResponse(response);
+        authControls.replaceChildren();
+
+        if (auth.authenticated) {
+          const name = document.createElement("span");
+          name.className = "auth-user";
+          name.textContent = auth.name || auth.email || "Signed in";
+
+          const logout = document.createElement("button");
+          logout.type = "button";
+          logout.className = "auth-button";
+          logout.textContent = "Sign out";
+          logout.addEventListener("click", async () => {
+            await fetch("/auth/logout", { method: "POST" });
+            window.location.reload();
+          });
+          authControls.append(name, logout);
+          return;
+        }
+
+        const signIn = document.createElement("a");
+        signIn.className = "auth-button auth-sign-in";
+        signIn.href = "/auth/google/login";
+        signIn.textContent = "Sign in with Google";
+        authControls.append(signIn);
+      } catch {
+        const signIn = document.createElement("a");
+        signIn.className = "auth-button auth-sign-in";
+        signIn.href = "/auth/google/login";
+        signIn.textContent = "Sign in with Google";
+        authControls.replaceChildren(signIn);
+      }
+    }
 
     function loadUserProfile() {
       try {
@@ -150,6 +202,11 @@
       };
 
       const patterns = [
+        ["assistant name", /\b(?:change|set|rename)\s+(?:(?:the\s+)?(?:jb[- ]?chat|chat[- ]?jb|assistant)|your)\s+(?:['’]s\s+)?name\s+(?:to|as)\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/i],
+        ["assistant name", /\b(?:your|jb[- ]?chat|chat[- ]?jb|assistant)(?:['’]s)?\s+name\s+(?:is|should be)\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/i],
+        ["assistant name", /\b(?:call|refer to|address)\s+(?:you|yourself)\s+as\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/i],
+        ["assistant name", /\bcall yourself\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/i],
+        ["assistant name", /\bi(?:'ll|’ll| will)\s+call you\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/i],
         ["name", /\bmy name is\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/i],
         ["name", /\b(?:please\s+)?call me\s+(.+?)(?=[.!?](?:\s|$)|[;\n]|$)/i],
         ["age", /\bmy age is\s+(\d{1,3})(?:\s*(?:years? old|yo))?\b/i],
@@ -378,7 +435,7 @@
       loading.textContent = "Loading models from JB-Chat";
       modelList.append(loading);
       try {
-        const response = await fetch("/models");
+        const response = await fetchWithAccessToken("/models");
         const result = await readApiResponse(response);
         if (!Array.isArray(result.models)) throw new Error("JB-Chat returned an invalid model list.");
         renderModels(result.models, { tokenFallback });
@@ -759,7 +816,7 @@
       const extension = blob.type.includes("mp4") ? "mp4" : blob.type.includes("ogg") ? "ogg" : "webm";
       formData.append("audio", blob, `speech.${extension}`);
       try {
-        const response = await fetch("/translate-speech", {
+        const response = await fetchWithAccessToken("/translate-speech", {
           method: "POST",
           body: formData,
           signal: speechRequestController.signal,
@@ -890,7 +947,7 @@
         const formData = new FormData();
         formData.append("text", selectedSpeakText);
         formData.append("target_language", speakTargetLanguage.value);
-        const response = await fetch("/translate", { method: "POST", body: formData });
+        const response = await fetchWithAccessToken("/translate", { method: "POST", body: formData });
         const result = await readApiResponse(response);
         const utterance = new SpeechSynthesisUtterance(result.translatedText);
         utterance.lang = speakTargetLanguage.value;
@@ -937,7 +994,7 @@
         content.className = "message-content";
         const name = document.createElement("div");
         name.className = "message-name";
-        name.textContent = message.role === "user" ? "You" : "JB-Chat";
+        name.textContent = message.role === "user" ? "You" : getAssistantName();
         const text = document.createElement("div");
         text.className = "message-text";
 
@@ -1066,7 +1123,7 @@
         if (index === messages.length - 1 && message.pending) {
           const waiting = document.createElement("div");
           waiting.className = "typing";
-          waiting.setAttribute("aria-label", "JB-Chat is thinking");
+          waiting.setAttribute("aria-label", `${getAssistantName()} is thinking`);
           waiting.innerHTML = "<span></span><span></span><span></span>";
           content.append(waiting);
         }
@@ -1162,7 +1219,7 @@
         formData.append("model", requestedModel);
         formData.append("profile", JSON.stringify(userProfile));
         submittedFiles.forEach((file) => formData.append("files", file, file.name));
-        const response = await fetch("/chat", {
+        const response = await fetchWithAccessToken("/chat", {
           method: "POST",
           body: formData,
         });
@@ -1328,3 +1385,17 @@
     selectModel(DEFAULT_MODEL);
     renderChatList();
     renderMessages();
+    void initializeGoogleSignIn();
+
+    const SERVER_KEEPALIVE_INTERVAL_MS = 5 * 60 * 1000;
+    window.setInterval(() => {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
+      fetch("/health", {
+        method: "GET",
+        cache: "no-store",
+        signal: controller.signal,
+      }).catch(() => {
+        // The keepalive is best-effort; normal application requests report real errors.
+      }).finally(() => window.clearTimeout(timeoutId));
+    }, SERVER_KEEPALIVE_INTERVAL_MS);
