@@ -312,8 +312,8 @@
     
     function updateSelectedModelLabel() {
       const percent = modelQuotas[selectedModel]?.requests_used_percent;
-      selectedModelTitle.textContent = `${getModelLabel(selectedModel)} -`;
-      selectedModelQuota.textContent = typeof percent === "number" ? `${percent}% used` : "Quota —";
+      selectedModelTitle.textContent = `${getModelLabel(selectedModel)}`;
+      // selectedModelQuota.textContent = typeof percent === "number" ? `${percent}% used` : "Quota —";
       selectedModelName.title = typeof percent === "number"
         ? `${getModelLabel(selectedModel)} · ${percent}% of daily requests used`
         : `${getModelLabel(selectedModel)} · request quota not reported yet`;
