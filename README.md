@@ -272,6 +272,8 @@ GOOGLE_ALLOWED_DOMAIN=example.com
 
 The login button appears in the top bar. A successful Google login creates an HTTP-only, signed session cookie. The cookie lasts seven days and is secure when `ENVIRONMENT=production`. `APP_ACCESS_TOKEN` remains available as an API-client fallback; browser users no longer need to enter or know it.
 
+The session middleware must run before the provider-route authorization middleware so that the authorization check can read the signed session cookie. If chat returns HTTP 401 after Google login, deploy the latest code, sign out, sign in again, and verify `GET /auth/me` returns `"authenticated": true`.
+
 ## Project structure
 
 ```text
