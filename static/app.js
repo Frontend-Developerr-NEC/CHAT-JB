@@ -83,6 +83,25 @@
       return request();
     }
 
+    function createGoogleSignInLink() {
+      const signIn = document.createElement("a");
+      signIn.className = "auth-button auth-sign-in";
+      signIn.href = "/auth/google/login";
+
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      icon.setAttribute("class", "google-icon");
+      icon.setAttribute("viewBox", "0 0 48 48");
+      icon.setAttribute("aria-hidden", "true");
+      icon.innerHTML = [
+        '<path fill="#4285F4" d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2l6.6 5.1c3.9-3.6 6.1-8.8 6.1-15Z"/>',
+        '<path fill="#34A853" d="M24 44c5.5 0 10.1-1.8 13.5-4.9l-6.6-5.1c-1.8 1.2-4.1 2-6.9 2-5.3 0-9.8-3.6-11.4-8.4l-6.8 5.2C9.2 39.4 16.1 44 24 44Z"/>',
+        '<path fill="#FBBC05" d="M12.6 27.6a12 12 0 0 1 0-7.2l-6.8-5.2a20 20 0 0 0 0 17.6l6.8-5.2Z"/>',
+        '<path fill="#EA4335" d="M24 11.9c3 0 5.7 1 7.8 3.1l5.8-5.8C34.1 5.8 29.5 4 24 4 16.1 4 9.2 8.6 5.8 15.2l6.8 5.2c1.6-4.9 6.1-8.5 11.4-8.5Z"/>',
+      ].join("");
+      signIn.append(icon, document.createTextNode("Sign in with Google"));
+      return signIn;
+    }
+
     async function initializeGoogleSignIn() {
       try {
         const response = await fetch("/auth/me", {
@@ -100,7 +119,13 @@
           const logout = document.createElement("button");
           logout.type = "button";
           logout.className = "auth-button";
-          logout.textContent = "Sign out";
+          const logoutIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          logoutIcon.setAttribute("class", "auth-icon");
+          logoutIcon.setAttribute("viewBox", "0 0 24 24");
+          logoutIcon.setAttribute("fill", "none");
+          logoutIcon.setAttribute("aria-hidden", "true");
+          logoutIcon.innerHTML = '<path d="M10 17l5-5-5-5M15 12H3m9-7h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>';
+          logout.append(logoutIcon, document.createTextNode("Sign out"));
           logout.addEventListener("click", async () => {
             await fetch("/auth/logout", { method: "POST" });
             window.location.reload();
@@ -109,17 +134,9 @@
           return;
         }
 
-        const signIn = document.createElement("a");
-        signIn.className = "auth-button auth-sign-in";
-        signIn.href = "/auth/google/login";
-        signIn.textContent = "Sign in with Google";
-        authControls.append(signIn);
+        authControls.append(createGoogleSignInLink());
       } catch {
-        const signIn = document.createElement("a");
-        signIn.className = "auth-button auth-sign-in";
-        signIn.href = "/auth/google/login";
-        signIn.textContent = "Sign in with Google";
-        authControls.replaceChildren(signIn);
+        authControls.replaceChildren(createGoogleSignInLink());
       }
     }
 

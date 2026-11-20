@@ -180,6 +180,7 @@
       min-height: 34px;
       align-items: center;
       justify-content: center;
+      gap: 8px;
       border: 1px solid #d8dae8;
       border-radius: 999px;
       background: #fff;
@@ -191,6 +192,8 @@
       cursor: pointer;
       padding: 6px 11px;
     }
+    .google-icon { width: 18px; height: 18px; flex: 0 0 18px; }
+    .auth-icon { width: 16px; height: 16px; flex: 0 0 16px; }
     .auth-button:hover {
       border-color: #aaa4ff;
       color: var(--accent-dark);
