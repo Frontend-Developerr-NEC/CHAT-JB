@@ -1281,10 +1281,10 @@
         messages[messages.length - 1] = {
           role: "assistant",
           content: error instanceof Error && error.status === 401
-            ? "Your Google sign-in session is missing or expired. Use “Sign in with Google” in the top-right, then send your message again."
+            ? "click “Sign in with Google” button To perform this action."
             : error instanceof Error
               ? error.message
-              : "Something went wrong. Please try again.",
+              : "Something went wrong. Admin solve the issues, Please try again later.",
           error: true,
         };
       } finally {
