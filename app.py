@@ -110,23 +110,6 @@ app = FastAPI(
     redoc_url=None if IS_PRODUCTION else "/redoc",
     openapi_url=None if IS_PRODUCTION else "/openapi.json",
 )
-SESSION_SECRET = os.getenv("SESSION_SECRET", "").strip()
-if len(SESSION_SECRET) < 32:
-    SESSION_SECRET = secrets.token_urlsafe(48)
-    logger = logging.getLogger(__name__)
-    logger.warning(
-        "SESSION_SECRET is missing. Set it persistently in the deployment environment "
-        "or generated sessions will be invalidated when the server restarts."
-    )
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=SESSION_SECRET,
-    session_cookie="jb_chat_session",
-    https_only=IS_PRODUCTION,
-    same_site="lax",
-    max_age=60 * 60 * 24 * 7,
-)
-
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
 GOOGLE_ALLOWED_DOMAIN = os.getenv("GOOGLE_ALLOWED_DOMAIN", "").strip().casefold()
@@ -452,6 +435,23 @@ async def protect_provider_routes(request: Request, call_next):
     response = await call_next(request)
     add_security_headers(response, request)
     return response
+
+
+SESSION_SECRET = os.getenv("SESSION_SECRET", "").strip()
+if len(SESSION_SECRET) < 32:
+    SESSION_SECRET = secrets.token_urlsafe(48)
+    logger.warning(
+        "SESSION_SECRET is missing. Set it persistently in the deployment environment "
+        "or generated sessions will be invalidated when the server restarts."
+    )
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SESSION_SECRET,
+    session_cookie="jb_chat_session",
+    https_only=IS_PRODUCTION,
+    same_site="lax",
+    max_age=60 * 60 * 24 * 7,
+)
 
 
 @app.exception_handler(405)
