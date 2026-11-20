@@ -1281,7 +1281,7 @@
         messages[messages.length - 1] = {
           role: "assistant",
           content: error instanceof Error && error.status === 401
-            ? "Click “Sign in with Google” button To perform this action."
+            ? "Click the “Sign in with Google” button To perform this action."
             : error instanceof Error
               ? error.message
               : "Something went wrong. Admin solve the issues, Please try again later.",
