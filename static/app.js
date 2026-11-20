@@ -74,6 +74,7 @@
     async function fetchWithAccessToken(url, options = {}) {
       const request = () => fetch(url, {
         ...options,
+        credentials: "same-origin",
         headers: {
           ...Object.fromEntries(new Headers(options.headers)),
           ...(appAccessToken ? { Authorization: `Bearer ${appAccessToken}` } : {}),
@@ -84,7 +85,10 @@
 
     async function initializeGoogleSignIn() {
       try {
-        const response = await fetch("/auth/me", { cache: "no-store" });
+        const response = await fetch("/auth/me", {
+          cache: "no-store",
+          credentials: "same-origin",
+        });
         const auth = await readApiResponse(response);
         authControls.replaceChildren();
 
@@ -1249,7 +1253,11 @@
         }
         messages[messages.length - 1] = {
           role: "assistant",
-          content: error instanceof Error ? error.message : "Something went wrong. Please try again.",
+          content: error instanceof Error && error.status === 401
+            ? "Your Google sign-in session is missing or expired. Use “Sign in with Google” in the top-right, then send your message again."
+            : error instanceof Error
+              ? error.message
+              : "Something went wrong. Please try again.",
           error: true,
         };
       } finally {
