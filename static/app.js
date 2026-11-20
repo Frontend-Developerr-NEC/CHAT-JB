@@ -112,31 +112,52 @@
         authControls.replaceChildren();
 
         if (auth.authenticated) {
+          const account = document.createElement("div");
+          account.className = "sidebar-account";
+
+          const avatar = document.createElement("span");
+          avatar.className = "sidebar-account-avatar";
+          avatar.setAttribute("aria-hidden", "true");
+          avatar.textContent = (auth.name || auth.email || "U").trim().charAt(0).toUpperCase();
+
+          const accountText = document.createElement("span");
+          accountText.className = "sidebar-account-copy";
           const name = document.createElement("span");
-          name.className = "auth-user";
-          name.textContent = auth.name || auth.email || "Signed in";
+          name.className = "sidebar-account-name";
+          name.textContent = auth.name || "Signed in";
+          const email = document.createElement("span");
+          email.className = "sidebar-account-email";
+          email.textContent = auth.email || "Google account";
+          accountText.append(name, email);
+          account.append(avatar, accountText);
 
           const logout = document.createElement("button");
           logout.type = "button";
-          logout.className = "auth-button";
+          logout.className = "sidebar-sign-out";
+          logout.setAttribute("aria-label", "Sign out");
+          logout.title = "Sign out";
           const logoutIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
           logoutIcon.setAttribute("class", "auth-icon");
           logoutIcon.setAttribute("viewBox", "0 0 24 24");
           logoutIcon.setAttribute("fill", "none");
           logoutIcon.setAttribute("aria-hidden", "true");
           logoutIcon.innerHTML = '<path d="M10 17l5-5-5-5M15 12H3m9-7h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>';
-          logout.append(logoutIcon, document.createTextNode("Sign out"));
+          logout.append(logoutIcon);
           logout.addEventListener("click", async () => {
             await fetch("/auth/logout", { method: "POST" });
             window.location.reload();
           });
-          authControls.append(name, logout);
+          authControls.append(account, logout);
           return;
         }
 
-        authControls.append(createGoogleSignInLink());
+        const signIn = createGoogleSignInLink();
+        signIn.classList.add("sidebar-sign-in");
+        authControls.append(signIn);
       } catch {
-        authControls.replaceChildren(createGoogleSignInLink());
+        const signIn = createGoogleSignInLink();
+        signIn.classList.add("sidebar-sign-in");
+        authControls.replaceChildren(signIn);
       }
     }
 
@@ -375,62 +396,51 @@
       const modelIds = tokenFallback && !allFallbacksExhausted
         ? ALLOWED_MODELS.filter((id) => id !== IMAGE_FALLBACK_MODEL)
         : ALLOWED_MODELS;
-      if (tokenFallback) {
-        const notice = document.createElement("p");
-        notice.className = "model-dialog-message";
-        notice.textContent = allFallbacksExhausted
-          ? "All three alternative models have reached their token limits. Qwen is now available as a fallback."
-          : "A model has reached its token limit. Choose another available model; Qwen appears after all three alternatives are exhausted.";
-        modelList.append(notice);
-      }
+      const modelDescriptions = {
+        "openai/gpt-oss-20b": "Balanced performance for everyday tasks",
+        "openai/gpt-oss-120b": "More capable for complex questions",
+        "qwen/qwen3.8-27b": "Supports image and multimodal tasks",
+      };
       const rows = modelIds.map((id) => ({
         id,
-        name: id,
+        name: getModelLabel(id),
+        description: modelDescriptions[id] || "General-purpose assistant",
         available: availableIds.has(id),
         tokenLimited: isTokenLimitExceeded(modelQuotas[id]),
       }));
 
       rows.forEach((model) => {
-        const quota = modelQuotas[model.id];
-        const percent = quota?.requests_used_percent;
         const option = document.createElement("button");
         option.className = `model-option${model.id === selectedModel ? " selected" : ""}`;
         option.type = "button";
         option.disabled = !model.available || model.tokenLimited;
         const status = model.tokenLimited
-          ? "token limit exceeded"
-          : percent == null
-            ? "quota unknown"
-            : `${percent}% of daily requests used`;
+          ? "token quota reached"
+          : model.id === selectedModel
+            ? "selected"
+            : model.available
+              ? "available"
+              : "unavailable";
         option.setAttribute("aria-label", `${model.name}, ${status}`);
-        // console.log(`Rendering model option: ${model.name}, ${percent == null ? "quota unknown" : `${percent}% of daily requests used`}`);
-
-        const ring = document.createElement("span");
-        ring.className = "quota-ring";
-        if (typeof percent === "number") ring.style.setProperty("--used", `${percent}%`);
-        const ringText = document.createElement("span");
-        ringText.textContent = typeof percent === "number" ? `${percent}%` : "—";
-        ring.append(ringText);
 
         const copy = document.createElement("span");
         copy.className = "model-option-copy";
         const name = document.createElement("span");
         name.className = "model-option-name";
         name.textContent = model.name;
-        const usage = document.createElement("span");
-        usage.className = "model-option-usage";
-        if (!model.available) {
-          usage.textContent = "Not currently listed by JB-Chat";
-        } else if (model.tokenLimited) {
-          usage.textContent = "Token limit exceeded; this model is temporarily disabled";
-        } else if (!quota || percent == null) {
-          usage.textContent = "Daily request usage not reported yet";
-        } else {
-          const tokenPercent = quota.tokens_used_percent;
-          usage.textContent = `Daily requests: ${quota.requests_remaining ?? "?"} / ${quota.requests_limit ?? "?"} left · Tokens this minute: ${tokenPercent == null ? "not reported" : `${tokenPercent}% used`}`;
+        const description = document.createElement("span");
+        description.className = "model-option-description";
+        description.textContent = model.description;
+        copy.append(name, description);
+        const indicator = document.createElement("span");
+        indicator.className = `model-option-indicator${model.tokenLimited ? " quota-exceeded" : ""}`;
+        indicator.setAttribute("aria-hidden", "true");
+        if (model.tokenLimited) {
+          indicator.textContent = "×";
+        } else if (model.id === selectedModel) {
+          indicator.textContent = "✓";
         }
-        copy.append(name, usage);
-        option.append(ring, copy);
+        option.append(copy, indicator);
         if (model.available && !model.tokenLimited) {
           option.addEventListener("click", () => {
             selectedModel = model.id;
